@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function addadsPrefixToSegments(lines) {
+function addAdsPrefixToSegments(lines) {
   return lines.map(line => {
     if (line.trim().endsWith('.ts')) {
       return `/ads/${line.trim()}`;
@@ -9,6 +9,7 @@ function addadsPrefixToSegments(lines) {
     return line;
   });
 }
+
 function addStaticPrefixToSegments(lines) {
   return lines.map(line => {
     if (line.trim().endsWith('.ts')) {
@@ -17,46 +18,68 @@ function addStaticPrefixToSegments(lines) {
     return line;
   });
 }
+
 exports.getVideoPlaylist = (req, res) => {
-  // show ad only if the client sents the showad argument as true 
-  const showAd = req.query.showAd === 'true';
   console.log("Connected");
 
+  const showAd = req.query.showAd === 'true';
   const lionPath = path.join(__dirname, '../lionking_hls/lionking.m3u8');
   const adPath = path.join(__dirname, '../ad_hls/ad.m3u8');
 
   let lionContent, adContent;
   try {
-    // reading the content form m3u8 file to add the ad content to it
     lionContent = fs.readFileSync(lionPath, 'utf8');
     adContent = fs.readFileSync(adPath, 'utf8');
   } catch (err) {
     return res.status(500).send('Error reading HLS files.');
   }
 
-  const lionLines = lionContent.split('\n');
-  const adLinesRaw = adContent.split('\n').filter(line => !line.startsWith('#EXTM3U'));
+  const lionLines = lionContent
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '' && !line.startsWith('#EXT-X-ENDLIST'));
 
-  const lionLinesWithStatic = addStaticPrefixToSegments(lionLines);
+  const lionHeaders = lionLines.filter(line =>
+    line.startsWith('#EXTM3U') ||
+    line.startsWith('#EXT-X-VERSION') ||
+    line.startsWith('#EXT-X-TARGETDURATION') ||
+    line.startsWith('#EXT-X-MEDIA-SEQUENCE') ||
+    line.startsWith('#EXT-X-PLAYLIST-TYPE')
+  );
+  const lionSegments = lionLines.filter(line => !lionHeaders.includes(line));
+  const lionSegmentsWithStatic = addStaticPrefixToSegments(lionSegments);
 
-  const adLinesWithStatic = addadsPrefixToSegments(adLinesRaw);
+  const adLines = adContent
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line =>
+      line !== '' &&
+      !line.startsWith('#EXTM3U') &&
+      !line.startsWith('#EXT-X-VERSION') &&
+      !line.startsWith('#EXT-X-TARGETDURATION') &&
+      !line.startsWith('#EXT-X-MEDIA-SEQUENCE') &&
+      !line.startsWith('#EXT-X-PLAYLIST-TYPE') &&
+      !line.startsWith('#EXT-X-ENDLIST')
+    );
+
+  const adLinesWithPrefix = addAdsPrefixToSegments(adLines);
 
   if (!showAd) {
-    // if the showAd is false return the lionking.m3u8 as itslef
-    const lionPlaylist = lionLinesWithStatic.join('\n');
-    console.log(lionPlaylist);
-    return res.type('application/vnd.apple.mpegurl').send(lionPlaylist);
+    const finalPlaylist = [...lionHeaders, ...lionSegmentsWithStatic, '#EXT-X-ENDLIST'].join('\n');
+    return res.type('application/vnd.apple.mpegurl').send(finalPlaylist);
   }
-  // adding ad segments to the 6th segment of the first segment of the lionking.m3u8
+
   const combined = [
-    lionLinesWithStatic[0],              
-    ...lionLinesWithStatic.slice(1, 7), 
+    ...lionHeaders,
+    lionSegmentsWithStatic[0],  // intro segment
+    lionSegmentsWithStatic[1],
     '#EXT-X-DISCONTINUITY',
-    ...adLinesWithStatic,
+    ...adLinesWithPrefix,
     '#EXT-X-DISCONTINUITY',
-    ...lionLinesWithStatic.slice(7)      
+    ...lionSegmentsWithStatic.slice(2),
+    '#EXT-X-ENDLIST'
   ].join('\n');
-  // sending teh merged m3u8
+
   console.log(combined);
   res.type('application/vnd.apple.mpegurl').send(combined);
 };
