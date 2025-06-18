@@ -20,8 +20,6 @@ function addStaticPrefixToSegments(lines) {
 }
 
 exports.getVideoPlaylist = (req, res) => {
-  console.log("Connected");
-
   const showAd = req.query.showAd === 'true';
   const lionPath = path.join(__dirname, '../lionking_hls/lionking.m3u8');
   const adPath = path.join(__dirname, '../ad_hls/ad.m3u8');
@@ -80,6 +78,5 @@ exports.getVideoPlaylist = (req, res) => {
     '#EXT-X-ENDLIST'
   ].join('\n');
 
-  console.log(combined);
   res.type('application/vnd.apple.mpegurl').send(combined);
 };
