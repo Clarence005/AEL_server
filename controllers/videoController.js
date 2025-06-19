@@ -1,4 +1,4 @@
-const fs = require('fs');
+const fs = require('fs'); 
 const path = require('path');
 
 function addAdsPrefixToSegments(lines) {
@@ -67,9 +67,18 @@ exports.getVideoPlaylist = (req, res) => {
     return res.type('application/vnd.apple.mpegurl').send(finalPlaylist);
   }
 
+  const adDurations = adContent
+  .split('\n')
+  .map(line => line.trim())
+  .filter(line => line.startsWith('#EXTINF:'))
+  .map(line => parseFloat(line.replace('#EXTINF:', '').replace(',', '')))
+  .filter(val => !isNaN(val));
+
+const adDurationMs = Math.round(adDurations.reduce((a, b) => a + b, 0) * 1000);
+
   const combined = [
     ...lionHeaders,
-    lionSegmentsWithStatic[0],  // intro segment
+    lionSegmentsWithStatic[0],
     lionSegmentsWithStatic[1],
     '#EXT-X-DISCONTINUITY',
     ...adLinesWithPrefix,
@@ -77,6 +86,8 @@ exports.getVideoPlaylist = (req, res) => {
     ...lionSegmentsWithStatic.slice(2),
     '#EXT-X-ENDLIST'
   ].join('\n');
-
-  res.type('application/vnd.apple.mpegurl').send(combined);
+  res
+    .set('X-Ad-Duration', adDurationMs.toString())
+    .type('application/vnd.apple.mpegurl')
+    .send(combined);
 };
